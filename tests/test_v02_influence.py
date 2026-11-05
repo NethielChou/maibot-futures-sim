@@ -319,7 +319,7 @@ class ScheduleInfluenceTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_persona_and_influence_in_decision_input(self):
         class FakeInfluence:
-            async def gather(self):
+            async def gather(self, symbols=None):
                 return "群友：螺纹看多"
 
         quote = make_quote(now=TODAY, age_seconds=1)
@@ -358,7 +358,7 @@ class ScheduleInfluenceTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_dry_run_shows_influence_material(self):
         class FakeInfluence:
-            async def gather(self):
+            async def gather(self, symbols=None):
                 return "群友：螺纹看多"
 
         quotes = submodule("quotes")

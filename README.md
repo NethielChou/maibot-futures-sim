@@ -5,8 +5,8 @@
 
 ## 当前状态
 
-- 版本：**0.8.3**
-- 自动化测试：**183/183 通过**
+- 版本：**0.8.4**
+- 自动化测试：**185/185 通过**
 - 宿主：MaiBot 1.3.19 / `maibot-plugin-sdk` 2.21.0
 - 许可：AGPL-3.0
 - 自动交易默认 **关闭**，需要在插件设置页手动开启
@@ -147,7 +147,7 @@ git clone https://github.com/NethielChou/maibot-futures-sim
 <generation 目录>\python.exe -m unittest discover -s tests -t .
 ```
 
-当前：**183 个用例全部通过**。
+当前：**185 个用例全部通过**。
 
 测试覆盖：
 

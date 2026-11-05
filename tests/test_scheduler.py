@@ -308,6 +308,58 @@ class TradingTickTest(EngineHarness):
         trades = self.ledger.recent_trades(5)
         self.assertEqual(trades[0].action, "close")
 
+    def test_settlement_at_2030_does_not_settle_next_day(self):
+        """20:00 夜盘翻日后不能把 D 的结算价记到 D+1。"""
+
+        self.config.decision.auto_trade = False
+        self.ledger.try_open(
+            order_id="settle-2030",
+            decision_id="settle-2030",
+            ts="2026-11-03T09:30:00",
+            spec=self.specs["RB2701"],
+            side="long",
+            lots=1,
+            price=3000.0,
+            stop_price=2950.0,
+            take_price=3100.0,
+        )
+        night = datetime(2026, 11, 3, 20, 30, 0, tzinfo=CST)
+        quote = make_quote(
+            now=night, age_seconds=1, last=3008.0, settle=3010.0, bid1=3007.0, ask1=3008.0
+        )
+        source = FakeSource([make_batch(night, {"RB2701": quote})])
+        engine = self.make_engine(source, clock=lambda: night)
+        asyncio.run(engine.tick(night))
+        self.assertEqual(len(self.ledger.settlements_for("2026-11-03")), 1)
+        self.assertEqual(self.ledger.settlements_for("2026-11-04"), [])
+
+    def test_stop_prevents_inflight_tick_from_creating_decision(self):
+        class GateSource:
+            def __init__(self):
+                self.started = asyncio.Event()
+                self.release = asyncio.Event()
+
+            async def fetch(self, symbols):
+                self.started.set()
+                await self.release.wait()
+                quote = make_quote(now=TODAY, age_seconds=1)
+                return make_batch(TODAY, {"RB2701": quote})
+
+        async def scenario():
+            source = GateSource()
+            engine = self.make_engine(source)
+            self.seed_samples(engine)
+            tick_task = asyncio.create_task(engine.tick(TODAY))
+            await source.started.wait()
+            await engine.stop()
+            source.release.set()
+            await tick_task
+            return engine
+
+        engine = asyncio.run(scenario())
+        self.assertIsNone(engine._decision_task)
+        self.assertIsNone(self.ledger.position("RB2701"))
+
     def test_settlement_after_close(self):
         self.config.decision.auto_trade = False
         spec = self.specs["RB2701"]

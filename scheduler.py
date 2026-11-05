@@ -15,6 +15,7 @@ Codex 评审 P1 修复：
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 import uuid
 from datetime import date, datetime, time, timedelta
 from typing import Any, Awaitable, Callable
@@ -303,6 +304,11 @@ class TradingEngine:
         self._halt_notice_day = ""
         self._invalidate_in_flight()
 
+    def current_trading_day(self, now: datetime | None = None) -> str:
+        """当前交易日文本（重置账户时不能用自然日）。"""
+
+        return self._trading_day(now or self._clock()).isoformat()
+
     def _invalidate_in_flight(self) -> None:
         self._state_version += 1
         task = self._decision_task
@@ -313,13 +319,22 @@ class TradingEngine:
         """停止引擎：作废在途决策并等待其退出（插件卸载/配置重建时调用）。"""
 
         self._stopped = True
+        # tick 可能正在 await 行情；停完后它不能再创建新任务。
         self._invalidate_in_flight()
-        task = self._decision_task
-        if task is not None and not task.done():
+        for _ in range(3):
+            task = self._decision_task
+            if task is None:
+                break
+            if not task.done():
+                task.cancel()
             try:
                 await task
             except (asyncio.CancelledError, Exception):  # noqa: BLE001 - 停止阶段吞掉
                 pass
+            if self._decision_task is task:
+                self._decision_task = None
+            if self._decision_task is None:
+                break
         self._decision_task = None
 
     def latest_marks(self) -> dict[str, float]:
@@ -359,6 +374,8 @@ class TradingEngine:
         today_text = self._trading_day(current).isoformat()
         account = self._ledger.account()
         if account.day != today_text:
+            # 20:00 夜盘交易日会翻到 D+1，但 D 的结算仍要在翻日之前完成。
+            await self._settlement_tick(current)
             await self._reconcile_before_rollover(current)
             marks, complete = self._valuation_marks()
             self._ledger.rollover(today_text, marks, complete=complete)
@@ -367,8 +384,7 @@ class TradingEngine:
         if self._night_session_blocked(current):
             return
         if not self._any_session_open(current):
-            if not market_calendar.is_trading_day(self._calendar_market, current.date()):
-                return
+            # 周六 05:10 等非交易时段也要允许补结算上一交易日。
             await self._settlement_tick(current)
             return
         if not market_calendar.is_trading_day(self._calendar_market, current.date()):
@@ -407,6 +423,8 @@ class TradingEngine:
         batch = await self._fetch(list(self._specs))
         self._last_poll_at = now
         if batch is None:
+            return
+        if self._stopped:
             return
 
         fresh: dict[str, Any] = {}
@@ -495,6 +513,8 @@ class TradingEngine:
         if self._settlement_pending():
             self._logger.warning("存在未完成结算对账，暂不发起新决策")
             return
+        if self._stopped:
+            return
         # 决策放后台任务：模型等待期间本轮循环继续负责行情/止损巡检
         self._decision_task = asyncio.create_task(
             self._decision_round(now, fresh, marks), name="mai-futures-decision"
@@ -542,7 +562,7 @@ class TradingEngine:
                     price=plan.price,
                     note=reason,
                 )
-            except (ExecutionError, LedgerError, NoPositionError) as exc:
+            except (ExecutionError, LedgerError, NoPositionError, sqlite3.Error) as exc:
                 self._logger.warning("%s 规则平仓失败：%s", position.symbol, exc)
                 return
         equity = self._ledger.equity(self._valuation_marks()[0])
@@ -556,7 +576,7 @@ class TradingEngine:
         influence_text = ""
         if self._influence is not None:
             try:
-                influence_text = await self._influence.gather()
+                influence_text = await self._influence.gather(list(self._specs))
             except Exception as exc:  # noqa: BLE001 - 影响源失败不影响交易
                 self._logger.warning("影响源收集失败（本轮跳过）：%s", exc)
         decision_input = self._build_decision_input(now, fresh, influence_text=influence_text)
@@ -636,11 +656,10 @@ class TradingEngine:
         manual: bool = False,
         source: str = "llm",
     ) -> tuple[str, str]:
-        if not manual:
-            if version != self._state_version:
-                return "rejected", "状态已变更（暂停/重置），旧决策作废"
-            if self.paused:
-                return "rejected", "已暂停，旧决策作废"
+        if version != self._state_version:
+            return "rejected", "状态已变更（暂停/重置），旧决策作废"
+        if not manual and self.paused:
+            return "rejected", "已暂停，旧决策作废"
         spec = self._specs.get(decision.symbol)
         if spec is None:
             return "rejected", f"合约不在合约池：{decision.symbol}"
@@ -704,11 +723,12 @@ class TradingEngine:
             return "rejected", str(exc)
 
         # 模型返回后/T1 取价后/写账前多次复查状态版本（管理员手动单不受暂停影响）
-        if not manual:
-            if version != self._state_version or self.paused:
-                return "rejected", "状态已变更（暂停/重置），旧决策作废"
-            if self._ledger.account().halted:
-                return "rejected", "已触发亏损停手，旧决策作废"
+        if version != self._state_version:
+            return "rejected", "状态已变更（暂停/重置），旧决策作废"
+        if not manual and self.paused:
+            return "rejected", "状态已变更（暂停/重置），旧决策作废"
+        if not manual and self._ledger.account().halted:
+            return "rejected", "已触发亏损停手，旧决策作废"
         equity_t1 = self._ledger.equity(self._valuation_marks()[0])
         context_t1 = self._risk_context(
             self._clock(), decision.symbol, decision_input, equity_t1, spec, reference_price=plan.price
@@ -730,11 +750,12 @@ class TradingEngine:
 
         ts = self._clock().isoformat(timespec="seconds")
         async with self._trade_lock:
-            if not manual:
-                if version != self._state_version or self.paused:
-                    return "rejected", "状态已变更（暂停/重置），旧决策作废"
-                if self._ledger.account().halted:
-                    return "rejected", "已触发亏损停手，旧决策作废"
+            if version != self._state_version:
+                return "rejected", "状态已变更（暂停/重置），旧决策作废"
+            if not manual and self.paused:
+                return "rejected", "状态已变更（暂停/重置），旧决策作废"
+            if not manual and self._ledger.account().halted:
+                return "rejected", "已触发亏损停手，旧决策作废"
             if not self._symbol_session_open(self._clock(), decision.symbol):
                 return "rejected", "已不在交易时段"
             try:
@@ -761,7 +782,7 @@ class TradingEngine:
                         price=plan.price,
                         note=decision.reason,
                     )
-            except (ExecutionError, LedgerError, NoPositionError) as exc:
+            except (ExecutionError, LedgerError, NoPositionError, sqlite3.Error) as exc:
                 return "rejected", str(exc)
 
         equity = self._ledger.equity(self._valuation_marks()[0])
@@ -803,6 +824,7 @@ class TradingEngine:
         now = self._clock()
         if not self._symbol_session_open(now, symbol):
             return "rejected", "当前不在交易时段，无法执行手动操作"
+        state_version = self._state_version
         batch = await self._fetch(list(self._specs))
         if batch is None:
             return "rejected", "行情取不到，无法执行手动操作"
@@ -830,7 +852,7 @@ class TradingEngine:
             decision,
             self._build_decision_input(now, fresh),
             decision_id,
-            self._state_version,
+            state_version,
             manual=True,
             source=source,
         )
@@ -974,8 +996,17 @@ class TradingEngine:
         prices: dict[str, float] = {}
         for position in positions:
             quote = batch.quotes.get(position.symbol)
-            if quote is not None and quote.prev_settle > 0:
-                prices[position.symbol] = quote.prev_settle
+            if quote is None:
+                continue
+            price = 0.0
+            if quote.prev_settle > 0:
+                price = quote.prev_settle
+            elif quote.settle > 0:
+                price = quote.settle
+            elif self._config.account.settle_use_last and quote.last > 0:
+                price = quote.last
+            if price > 0:
+                prices[position.symbol] = price
         if not prices:
             self._logger.warning("跨日补结算缺少昨结算价（%s）", settle_date)
             return
@@ -1001,27 +1032,21 @@ class TradingEngine:
     async def _settlement_tick(self, now: datetime) -> None:
         if not self._config.account.settle_enabled:
             return
-        if not market_calendar.is_trading_day(self._calendar_market, now.date()):
+        settle_date = self._settlement_due_date(now)
+        if settle_date is None:
             return
-        try:
-            settle_time = time.fromisoformat(self._config.account.settle_time)
-        except ValueError:
-            self._logger.warning("结算时间配置非法：%s", self._config.account.settle_time)
-            return
-        if now.time() < settle_time:
-            return
+        settle_text = settle_date.isoformat()
         positions = self._ledger.positions()
         if not positions:
-            for settle_date in self._settle_pending_dates():
-                if settle_date <= self._trading_day(now).isoformat():
-                    self._clear_settle_pending(settle_date)
+            for pending_date in self._settle_pending_dates():
+                if pending_date <= settle_text:
+                    self._clear_settle_pending(pending_date)
             return
-        today_text = self._trading_day(now).isoformat()
-        settled = {record.symbol for record in self._ledger.settlements_for(today_text)}
+        settled = {record.symbol for record in self._ledger.settlements_for(settle_text)}
         if all(position.symbol in settled for position in positions):
-            self._clear_settle_pending(today_text)
+            self._clear_settle_pending(settle_text)
             return
-        gate_text = self._ledger.get_meta(f"settle_next_try:{today_text}", "")
+        gate_text = self._ledger.get_meta(f"settle_next_try:{settle_text}", "")
         if gate_text:
             try:
                 if now < datetime.fromisoformat(gate_text):
@@ -1032,7 +1057,7 @@ class TradingEngine:
         settle_prices: dict[str, float] = {}
         if self._settlement_provider is not None:
             try:
-                official = await self._settlement_provider(today_text, symbols)
+                official = await self._settlement_provider(settle_text, symbols)
             except Exception as exc:  # noqa: BLE001 - 官方源失败回退行情
                 self._logger.warning("官方结算价获取失败，回退行情：%s", exc)
                 official = {}
@@ -1051,7 +1076,7 @@ class TradingEngine:
                     )
                     if price <= 0:
                         continue
-                    same_date = quote.quote_time.date() == now.date()
+                    same_date = quote.quote_time.date() == settle_date
                     recent_overnight = (
                         self._config.account.settle_use_last
                         and (now.date() - quote.quote_time.date()).days <= 1
@@ -1059,34 +1084,57 @@ class TradingEngine:
                     if same_date or recent_overnight:
                         settle_prices[symbol] = price
         if not settle_prices:
-            first = self._mark_settle_pending(today_text, now)
+            first = self._mark_settle_pending(settle_text, now)
             if first:
                 await self._safe_notify("⚠️ 今日结算价暂缺（结算价字段为 0），稍后自动重试；恢复前禁止开新仓。")
-            self._logger.warning("本轮没有可用的当日结算价（%s）", today_text)
+            self._logger.warning("本轮没有可用的当日结算价（%s）", settle_text)
             return
         records = self._ledger.settle(
-            settle_date=today_text,
+            settle_date=settle_text,
             ts=now.isoformat(timespec="seconds"),
             settle_prices=settle_prices,
         )
-        settled_symbols = {record.symbol for record in self._ledger.settlements_for(today_text)}
+        settled_symbols = {record.symbol for record in self._ledger.settlements_for(settle_text)}
         remaining = [position for position in self._ledger.positions() if position.symbol not in settled_symbols]
         if remaining:
-            first = self._mark_settle_pending(today_text, now)
+            first = self._mark_settle_pending(settle_text, now)
             if first:
                 await self._safe_notify(
                     "⚠️ 每日结算部分完成：部分合约缺少结算价，稍后自动重试；恢复前禁止开新仓。"
                 )
             self._logger.warning("部分合约缺结算价：%s", [position.symbol for position in remaining])
             return
-        self._clear_settle_pending(today_text)
+        self._clear_settle_pending(settle_text)
         marks = self._valuation_marks()[0]
         equity = self._ledger.mark_equity(now.isoformat(timespec="seconds"), marks)
-        if records and today_text not in self._settle_notified:
-            self._settle_notified.add(today_text)
+        if records and settle_text not in self._settle_notified:
+            self._settle_notified.add(settle_text)
             if self._config.notify.close_report_enabled:
-                await self._safe_notify(report.format_settlement(today_text, records, equity))
-            self._logger.info("完成每日结算：%s", today_text)
+                await self._safe_notify(report.format_settlement(settle_text, records, equity))
+            self._logger.info("完成每日结算：%s", settle_text)
+
+    def _settlement_due_date(self, now: datetime) -> date | None:
+        """返回本轮应结算的交易日；结算日不随 20:00 夜盘交易日翻日。"""
+
+        try:
+            settle_time = time.fromisoformat(self._config.account.settle_time)
+        except ValueError:
+            self._logger.warning("结算时间配置非法：%s", self._config.account.settle_time)
+            return None
+        if now.time() < settle_time:
+            return None
+        if self._calendar_market == "cn":
+            # 20:00 后 _trading_day 已翻到下一交易日，但 15:10 结算的是当天。
+            if not market_calendar.is_trading_day("cn", now.date()):
+                return None
+            return now.date()
+        # 国际市场 05:10 结算刚结束的上一交易日；周六/周一凌晨也能补周五。
+        candidate = now.date() - timedelta(days=1)
+        for _ in range(8):
+            if market_calendar.is_trading_day(self._calendar_market, candidate):
+                return candidate
+            candidate -= timedelta(days=1)
+        return None
 
     # ---------- 试跑/通知 ----------
 
@@ -1110,7 +1158,7 @@ class TradingEngine:
         influence_text = ""
         if self._influence is not None:
             try:
-                influence_text = await self._influence.gather()
+                influence_text = await self._influence.gather(list(self._specs))
             except Exception as exc:  # noqa: BLE001 - 影响源失败不影响试跑
                 self._logger.warning("试跑收集影响源失败：%s", exc)
         decision_input = self._build_decision_input(now, fresh, influence_text=influence_text)

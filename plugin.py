@@ -25,7 +25,7 @@ from . import tools
 from .bars import SampleBook
 from .command_router import CommandRouter
 from .config import CONFIG_VERSION, MaiFuturesConfig
-from .contracts import MARKET_PROFILES, resolve_market_contracts
+from .contracts import DEFAULT_CONTRACTS, MARKET_PROFILES, resolve_market_contracts
 from .decision import CallBudget, LLMDecisionEngine
 from .influence import InfluenceService
 from .ledger import Ledger
@@ -35,7 +35,7 @@ from .runtimes import MarketRuntime
 from .scheduler import TradingEngine
 
 CST = ZoneInfo("Asia/Shanghai")
-PLUGIN_VERSION = "0.8.3"
+PLUGIN_VERSION = "0.8.4"
 _STREAM_REFRESH_INTERVAL_SECONDS = 60.0
 
 
@@ -117,6 +117,15 @@ class MaiFuturesSimPlugin(MaiBotPlugin):
         return result
 
     async def _start_services(self) -> None:
+        """启动服务；任何中途失败都先清理已创建的 runtime/账本，避免泄漏。"""
+
+        try:
+            await self._start_services_inner()
+        except BaseException:
+            await self._stop_services()
+            raise
+
+    async def _start_services_inner(self) -> None:
         config = self.config
         today = datetime.now(CST).strftime("%Y-%m-%d")
         data_dir = Path(self.ctx.paths.data_dir)
@@ -143,6 +152,7 @@ class MaiFuturesSimPlugin(MaiBotPlugin):
         )
 
         runtimes: dict[str, MarketRuntime] = {}
+        self._runtimes = runtimes
         for market_id in self._normalized_markets():
             profile = MARKET_PROFILES[market_id]
             override_symbols = list(config.market.symbols) if market_id == "cn" else []
@@ -166,6 +176,23 @@ class MaiFuturesSimPlugin(MaiBotPlugin):
             filename = "ledger.sqlite3" if market_id == "cn" else f"ledger_{market_id}.sqlite3"
             ledger = Ledger(data_dir / filename)
             ledger.initialize(profile.initial_balance, day=today)
+            # 配置里的品种池被改小后，已有持仓不能变成“孤儿”：能补回默认合约就补回，
+            # 否则拒绝启动该市场，避免估值永久不完整、持仓永远平不掉。
+            for position in ledger.positions():
+                if position.symbol in specs:
+                    continue
+                fallback = DEFAULT_CONTRACTS.get(position.symbol)
+                if fallback is None:
+                    raise ValueError(
+                        f"[{profile.label}] 账本持仓 {position.symbol} 不在合约池，也无法从默认合约补回；"
+                        "请恢复配置中的品种或先平仓"
+                    )
+                specs[position.symbol] = fallback
+                self.ctx.logger.warning(
+                    "[%s] 账本持仓 %s 不在当前品种池，已按默认合约补回估值/平仓能力",
+                    profile.label,
+                    position.symbol,
+                )
             health_issues = ledger.health_check() + ledger.check_accounting()
             if health_issues:
                 self.ctx.logger.error(
@@ -227,10 +254,10 @@ class MaiFuturesSimPlugin(MaiBotPlugin):
                 specs=specs,
                 quote_source=source,
             )
+            runtimes[market_id] = runtime
             runtime.task = asyncio.create_task(
                 self._run_engine(runtime), name=f"mai-futures-{market_id}"
             )
-            runtimes[market_id] = runtime
 
         self._runtimes = runtimes
         first = next(iter(runtimes.values()))
@@ -277,28 +304,16 @@ class MaiFuturesSimPlugin(MaiBotPlugin):
         return persona
 
     async def _stop_services(self) -> None:
-        await self._flush_outbox()
         official_task = self._official_task
         self._official_task = None
-        if official_task is not None:
-            official_task.cancel()
-            try:
-                await official_task
-            except asyncio.CancelledError:
-                pass
-            except Exception as exc:  # noqa: BLE001
-                self.ctx.logger.warning("官方数据同步任务停止时异常：%s", exc)
-        self._official = None
         runtimes = list(self._runtimes.values())
         self._runtimes = {}
         self._task = None
         self._engine = None
         self._ledger = None
+
+        # 先停交易循环，避免停止过程中又产生新的决策/播报；再停引擎里的决策任务。
         for runtime in runtimes:
-            try:
-                await runtime.engine.stop()
-            except Exception as exc:  # noqa: BLE001 - 关闭阶段只记录
-                self.ctx.logger.warning("[%s] 引擎停止时异常：%s", runtime.profile.label, exc)
             task = runtime.task
             if task is not None:
                 task.cancel()
@@ -308,6 +323,33 @@ class MaiFuturesSimPlugin(MaiBotPlugin):
                     pass
                 except Exception as exc:  # noqa: BLE001
                     self.ctx.logger.warning("[%s] 交易循环停止时异常：%s", runtime.profile.label, exc)
+        for runtime in runtimes:
+            try:
+                await runtime.engine.stop()
+            except Exception as exc:  # noqa: BLE001 - 关闭阶段只记录
+                self.ctx.logger.warning("[%s] 引擎停止时异常：%s", runtime.profile.label, exc)
+
+        # 延迟 flush 任务必须先取消，再手动发送剩余消息；否则会在卸载后发送。
+        outbox_task = self._outbox_task
+        self._outbox_task = None
+        if outbox_task is not None and not outbox_task.done():
+            outbox_task.cancel()
+            try:
+                await outbox_task
+            except asyncio.CancelledError:
+                pass
+        await self._flush_outbox()
+
+        if official_task is not None:
+            official_task.cancel()
+            try:
+                await official_task
+            except asyncio.CancelledError:
+                pass
+            except Exception as exc:  # noqa: BLE001
+                self.ctx.logger.warning("官方数据同步任务停止时异常：%s", exc)
+        self._official = None
+        for runtime in runtimes:
             runtime.ledger.close()
         self._allowed_streams = set()
 
@@ -518,7 +560,7 @@ class MaiFuturesSimPlugin(MaiBotPlugin):
         "期货",
         description="麦麦期货模拟盘：状态/行情/概览/记录/帮助；控制命令仅管理员",
         pattern=r"^/(?:期货|futures)(?:\s+.*)?$",
-        timeout_ms=45000,
+        timeout_ms=180000,
     )
     async def handle_futures(
         self,

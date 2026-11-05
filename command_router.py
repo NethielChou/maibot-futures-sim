@@ -141,7 +141,6 @@ class CommandRouter:
 
         if sub in {"pause", "resume", "reset"}:
             parts: list[str] = []
-            seen: set[str] = set()
             targets = runtimes
             control_text = text
             if sub == "reset" and arg_text:
@@ -155,9 +154,8 @@ class CommandRouter:
                 if not reply:
                     continue
                 cleaned = report.strip_disclaimer(reply)
-                if cleaned not in seen:
-                    seen.add(cleaned)
-                    parts.append(f"【{runtime.profile.label}】\n{cleaned}")
+                # 每个市场的控制结果都要显示；不能按回复文本去重，否则只看到第一个市场。
+                parts.append(f"【{runtime.profile.label}】\n{cleaned}")
             await self._send_combined(parts, stream_id=stream_id)
             return True, "", True
 

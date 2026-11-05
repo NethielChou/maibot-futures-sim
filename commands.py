@@ -267,7 +267,15 @@ async def handle_command(
         if sub == "reset":
             if arg.strip() not in {"确认", "確認", "confirm", "CONFIRM"}:
                 return CommandResult(True, "重置会清空虚拟账户与全部成交记录。确认请发送：/期货 重置 确认")
-            ledger.reset(services.config.account.initial_balance, day=now.strftime("%Y-%m-%d"))
+            was_paused = bool(getattr(services.engine, "paused", False))
+            trading_day_now = getattr(services.engine, "current_trading_day", None)
+            reset_day = (
+                trading_day_now() if callable(trading_day_now) else now.strftime("%Y-%m-%d")
+            )
+            ledger.reset(services.config.account.initial_balance, day=reset_day)
+            if was_paused:
+                # 暂停是账户级状态；重置删掉 meta 后必须回写，否则热更新会静默恢复交易。
+                ledger.set_meta("paused", "1")
             reset_state = getattr(services.engine, "reset_runtime_state", None)
             if callable(reset_state):
                 reset_state()

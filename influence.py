@@ -270,22 +270,23 @@ class InfluenceService:
         self._news_fetched_at: float | None = None
         self._news_lock = asyncio.Lock()
 
-    async def gather(self) -> str:
+    async def gather(self, symbols: list[str] | None = None) -> str:
         config = self._config_provider()
         influence = config.influence
         if not influence.enabled:
             return ""
+        focus_symbols = list(symbols) if symbols is not None else list(config.market.symbols)
         parts: list[str] = []
         if influence.group_enabled:
             try:
-                group_text = await self._group_context(influence)
+                group_text = await self._group_context(influence, focus_symbols)
                 if group_text:
                     parts.append(group_text)
             except Exception as exc:  # noqa: BLE001 - 影响源失败不影响交易
                 self._log("群聊影响读取失败（本轮跳过）：%s", exc)
         if influence.news_enabled:
             try:
-                news_text = await self._news_context(influence)
+                news_text = await self._news_context(influence, focus_symbols)
                 if news_text:
                     parts.append(news_text)
             except Exception as exc:  # noqa: BLE001
@@ -293,7 +294,7 @@ class InfluenceService:
         text = "\n".join(parts)
         return text[:MAX_INFLUENCE_CHARS]
 
-    async def _group_context(self, influence: Any) -> str:
+    async def _group_context(self, influence: Any, symbols: list[str]) -> str:
         stream_ids = [stream for stream in (self._stream_provider() or []) if stream]
         if not stream_ids:
             return ""
@@ -314,19 +315,17 @@ class InfluenceService:
             return ""
         if not isinstance(messages, list):
             return ""
-        config = self._config_provider()
-        summary = build_group_summary(messages, list(config.market.symbols), max_items=5)
+        summary = build_group_summary(messages, list(symbols), max_items=5)
         return f"群友最近讨论（只作参考）：\n{summary}" if summary else ""
 
-    async def _news_context(self, influence: Any) -> str:
+    async def _news_context(self, influence: Any, symbols: list[str]) -> str:
         items = await self._get_news_items(influence)
         if not items:
             return ""
-        config = self._config_provider()
         relevant = [
             item
             for item in items
-            if is_relevant_text(item.title, list(config.market.symbols), kind="news")
+            if is_relevant_text(item.title, list(symbols), kind="news")
         ]
         if not relevant:
             return ""
