@@ -8,7 +8,7 @@
 
 from maibot_sdk import Field, PluginConfigBase
 
-CONFIG_VERSION = "0.8.5"
+CONFIG_VERSION = "0.8.6"
 
 
 class PluginSectionConfig(PluginConfigBase):
@@ -63,7 +63,7 @@ class MarketConfig(PluginConfigBase):
     )
     night_enabled: bool = Field(
         default=True,
-        description="启用夜盘：RB/M/I/SR/CF 至 23:00，CU/AL 至 01:00，SC/AU/AG 至 02:30",
+        description="启用夜盘：RB/M/I/SR/CF/MA/FG/SA/UR/RU/Y/P 至 23:00，CU/AL 至 01:00，SC/AU/AG 至 02:30；LH/JD/AP 仅日盘",
     )
 
 

@@ -35,7 +35,7 @@ from .runtimes import MarketRuntime
 from .scheduler import TradingEngine
 
 CST = ZoneInfo("Asia/Shanghai")
-PLUGIN_VERSION = "0.8.5"
+PLUGIN_VERSION = "0.8.6"
 _STREAM_REFRESH_INTERVAL_SECONDS = 60.0
 
 

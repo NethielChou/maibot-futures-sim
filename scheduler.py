@@ -183,6 +183,7 @@ class TradingEngine:
         self._sessions = self._day_sessions
         self.paused: bool = ledger.get_meta("paused", "0") == "1"
         self.last_quotes: dict[str, Any] = {}
+        self._stale_warned: set[str] = set()
         self._last_poll_at: datetime | None = None
         self._next_decision_at: datetime | None = None
         self._settle_notified: set[str] = set()
@@ -298,6 +299,7 @@ class TradingEngine:
         """重置账户后清理内存态（行情缓存、决策节奏）并作废在途决策。"""
 
         self.last_quotes.clear()
+        self._stale_warned.clear()
         self._last_poll_at = None
         self._next_decision_at = None
         self._settle_notified.clear()
@@ -432,16 +434,26 @@ class TradingEngine:
             spec = self._specs.get(symbol)
             if spec is None:
                 continue
+            # 非交易时段（例如夜盘里的日盘品种）不参与决策，也不要每分钟刷“行情过期”。
+            if not self._symbol_session_open(now, symbol):
+                if quote_is_usable(
+                    quote, max_abs_change_ratio=self._config.risk.max_abs_price_change_ratio
+                ):
+                    self.last_quotes[symbol] = quote
+                continue
             if not quote_is_usable(quote, max_abs_change_ratio=self._config.risk.max_abs_price_change_ratio):
                 self._logger.warning("%s 行情异常，已忽略：%s", symbol, quote)
                 continue
             # 保留最后有效估值（即使过期），供权益/保证金判断使用
             self.last_quotes[symbol] = quote
             if not is_quote_fresh(quote, now, self._config.market.stale_quote_seconds):
-                self._logger.warning("%s 行情过期（可能休市/断流），本轮不参与决策", symbol)
-                continue
-            if not self._symbol_session_open(now, symbol):
-                # 该品种当前不在交易时段：不采样、不进入决策
+                stale_key = f"{symbol}:{now.date().isoformat()}"
+                if stale_key not in self._stale_warned:
+                    self._stale_warned.add(stale_key)
+                    self._logger.warning(
+                        "%s 行情过期（可能休市/断流），本轮不参与决策；当日只提示一次",
+                        symbol,
+                    )
                 continue
             fresh[symbol] = quote
             self._samples.add(quote)
