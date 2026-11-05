@@ -135,15 +135,31 @@ def parse_shfe_settlements(payload: Any) -> dict[str, float]:
     return result
 
 
-def parse_czce_settlements(text: str) -> dict[str, float]:
-    """解析郑商所 ``FutureDataDaily.txt`` 的“今结算”列。"""
+def _normalize_czce_symbol(symbol: str, reference_year: int) -> str:
+    """郑商所文件用 3 位合约码（AP701），插件用 4 位（AP2701）。"""
 
+    text = str(symbol or "").strip().upper()
+    letters = "".join(ch for ch in text if ch.isalpha())
+    digits = "".join(ch for ch in text if ch.isdigit())
+    if not letters or len(digits) != 3:
+        return text
+    decade = (int(reference_year) // 10) * 10
+    year = decade + int(digits[0])
+    if year < int(reference_year) - 5:
+        year += 10
+    return f"{letters}{year % 100:02d}{digits[1:]}"
+
+
+def parse_czce_settlements(text: str, *, reference_year: int | None = None) -> dict[str, float]:
+    """解析郑商所 ``FutureDataDaily.txt`` 的“今结算”列，并规范为 4 位合约码。"""
+
+    ref_year = int(reference_year or datetime.now().year)
     result: dict[str, float] = {}
     for line in text.splitlines():
         fields = [field.strip() for field in line.split("|")]
         if len(fields) < 7:
             continue
-        symbol = fields[0].upper()
+        symbol = _normalize_czce_symbol(fields[0], ref_year)
         if not symbol or not symbol[0].isalpha():
             continue
         try:
@@ -187,7 +203,12 @@ def fetch_cn_settlements(day: datetime.date, timeout: int = 15) -> dict[str, flo
         f"{compact}/FutureDataDaily.txt"
     )
     try:
-        result.update(parse_czce_settlements(_http_get(czce_url, timeout).decode("utf-8", errors="replace")))
+        result.update(
+            parse_czce_settlements(
+                _http_get(czce_url, timeout).decode("utf-8", errors="replace"),
+                reference_year=day.year,
+            )
+        )
     except Exception as exc:  # noqa: BLE001
         errors.append(f"{czce_url}: {exc}")
     if not result:

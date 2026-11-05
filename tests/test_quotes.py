@@ -49,6 +49,19 @@ class QuoteParseTest(unittest.TestCase):
         self.assertEqual(quote.quote_time.strftime("%H:%M:%S"), "19:12:00")
         self.assertEqual(quote.source, "sina_hf")
 
+    def test_intl_cents_are_normalized_to_dollars(self):
+        line = (
+            'var hq_str_hf_S="1204.930,,1204.500,1205.000,1206.750,1190.000,'
+            '09:00:00,1195.000,1200.000,0,2,2,2026-11-05,CBOT大豆,1000";'
+        )
+        quote = quotes.parse_intl_quote_line(
+            line, received_at=datetime(2026, 11, 5, 9, 0, 30, tzinfo=CST)
+        )
+        self.assertAlmostEqual(quote.last, 12.0493)
+        self.assertAlmostEqual(quote.bid1, 12.045)
+        self.assertAlmostEqual(quote.ask1, 12.05)
+        self.assertAlmostEqual(quote.prev_close, 11.95)
+
     def test_parse_intl_batch(self):
         oil = (
             'var hq_str_hf_OIL="102.395,,102.510,102.520,104.960,101.550,'

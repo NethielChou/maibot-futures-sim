@@ -69,7 +69,7 @@ class ContractTest(unittest.TestCase):
     def test_intl_profile(self):
         profile = contracts.MARKET_PROFILES["intl"]
         self.assertEqual(profile.currency, "麦麦币")
-        self.assertEqual(profile.initial_balance, 100_000.0)
+        self.assertEqual(profile.initial_balance, 200_000.0)
         self.assertEqual(profile.quote_style, "hf")
         self.assertTrue(profile.settle_enabled)
         self.assertTrue(profile.settle_use_last)

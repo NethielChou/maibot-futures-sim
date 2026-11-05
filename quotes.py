@@ -258,6 +258,14 @@ def parse_intl_quote_line(line: str, *, received_at: datetime | None = None) -> 
     for value in (last, bid1, ask1, high, low, prev_close):
         if not math.isfinite(value):
             raise QuoteParseError(f"{symbol} 字段不是有限数值")
+    if symbol in _INTL_CENTS_SYMBOLS:
+        scale = 0.01
+        last *= scale
+        bid1 *= scale
+        ask1 *= scale
+        high *= scale
+        low *= scale
+        prev_close *= scale
 
     date_text = fields[_INTL_FIELD["date"]].strip()
     time_text = fields[_INTL_FIELD["time"]].strip()
@@ -311,6 +319,9 @@ def parse_intl_quote_text(
 
 
 FUTURE_QUOTE_TOLERANCE_SECONDS = 120.0
+# 新浪 hf_ 里这些品种以“美分/蒲式耳”或“美分/磅”报价，统一换成美元，
+# 否则保证金会放大 100 倍。
+_INTL_CENTS_SYMBOLS = {"S", "C", "W", "CT", "KC"}
 
 
 def is_quote_fresh(quote: Quote, now: datetime, max_age_seconds: int) -> bool:

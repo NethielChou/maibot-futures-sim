@@ -58,7 +58,7 @@ class PluginContractTest(unittest.TestCase):
 
     def test_default_config(self):
         config = type(self.plugin).build_default_config()
-        self.assertEqual(config["plugin"]["config_version"], "0.8.4")
+        self.assertEqual(config["plugin"]["config_version"], "0.8.5")
         for section in ("plugin", "account", "market", "risk", "decision", "notify", "admin", "influence", "storage"):
             self.assertIn(section, config)
         self.assertEqual(config["market"]["markets"], ["cn"])
@@ -70,7 +70,7 @@ class PluginContractTest(unittest.TestCase):
         schema = type(self.plugin).build_config_schema(
             plugin_id="github.nethielchou.mai-futures-sim",
             plugin_name="麦麦期货模拟盘",
-            plugin_version="0.8.4",
+            plugin_version="0.8.5",
         )
         self.assertIsInstance(schema, dict)
         self.assertTrue(schema)

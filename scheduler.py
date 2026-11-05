@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo
 from . import market_calendar, report
 from .bars import SampleBook
 from .config import MaiFuturesConfig
-from .contracts import DEFAULT_CONTRACTS, ContractSpec
+from .contracts import DEFAULT_CONTRACTS, ContractSpec, front_name
 from .decision import BudgetExhausted, DecisionError, DecisionInput, DecisionText, LLMDecisionEngine
 from .execution import ExecutionError, check_fill_ready, make_fill_plan
 from .ledger import Ledger, LedgerError, NoPositionError
@@ -269,7 +269,7 @@ class TradingEngine:
             self._logger.info("换月：%s -> %s", old_symbol, target)
             if self._config.notify.event_reports:
                 await self._safe_notify(
-                    f"🔄 {old_symbol} 进入换月窗口，已平旧仓并切换到 {target}（{target_spec.name}）。"
+                    f"🔄 {front_name(old_symbol)} 进入换月窗口，已平旧仓并切换到下一主力合约。"
                 )
 
     # ---------- 状态 ----------
@@ -492,6 +492,9 @@ class TradingEngine:
                 continue
             quote = fresh.get(position.symbol)
             if quote is None:
+                # 过期后新浪不再更新该合约：用最后有效行情/最近结算价离线平仓，
+                # 否则持仓会永久占用保证金和持仓位。
+                await self._force_close_expired(now, position, spec)
                 continue
             await self._close_from_rule(now, position, quote, "到期强平")
 
@@ -520,6 +523,40 @@ class TradingEngine:
             self._decision_round(now, fresh, marks), name="mai-futures-decision"
         )
         self._decision_task.add_done_callback(self._on_decision_done)
+
+    async def _force_close_expired(self, now: datetime, position: Any, spec: ContractSpec) -> None:
+        """过期且无最新行情时，用最后有效价/最近结算价离线平仓。"""
+
+        quote = self.last_quotes.get(position.symbol)
+        price = float(getattr(quote, "last", 0) or 0) if quote is not None else 0.0
+        if price <= 0:
+            price = float(self._ledger.latest_settlement_price(position.symbol) or 0.0)
+        if price <= 0:
+            key = f"expiry_no_price:{position.symbol}"
+            if self._ledger.get_meta(key) != "1":
+                self._ledger.set_meta(key, "1")
+                self._logger.warning("%s 已过期且没有可用的最后价格，暂不能自动平仓", position.symbol)
+                if self._config.notify.event_reports:
+                    await self._safe_notify(
+                        f"⚠️ {spec.display_name or position.symbol} 已过期但无行情，"
+                        "暂时无法自动平仓；请停止自动交易并人工检查。"
+                    )
+            return
+        trade = self._ledger.try_close(
+            order_id=f"expiry-offline:{position.symbol}:{now.date().isoformat()}",
+            decision_id=f"expiry-offline:{position.symbol}",
+            ts=now.isoformat(timespec="seconds"),
+            spec=spec,
+            price=price,
+            note="过期无行情离线平仓",
+        )
+        self._ledger.delete_meta(f"expiry_no_price:{position.symbol}")
+        self._logger.warning("%s 过期无行情，已按 %.4f 离线平仓", position.symbol, price)
+        if self._config.notify.event_reports:
+            equity = self._ledger.equity(self._valuation_marks()[0])
+            await self._safe_notify(
+                report.format_close(trade, spec, equity, reason="过期无行情，按最后价格离线平仓")
+            )
 
     def _stop_take_reason(self, position: Any, quote: Any) -> str:
         if position.side == "long":
@@ -794,8 +831,9 @@ class TradingEngine:
                     report.format_close(trade, spec, equity, speech=decision.speech, reason=decision.reason)
                 )
         if action.startswith("open"):
-            return "opened", f"{trade.symbol} {trade.side} @{trade.price}"
-        return "closed", f"{trade.symbol} @{trade.price}"
+            side_text = "多" if trade.side == "long" else "空"
+            return "opened", f"{front_name(trade.symbol)} {side_text} @{trade.price:.4g}"
+        return "closed", f"{front_name(trade.symbol)} @{trade.price:.4g}"
 
     async def manual_order(self, *, action: str, symbol: str, lots: int = 1, operator: str = "") -> tuple[str, str]:
         """管理员手动单：与自主交易共用同一风控/成交/账本；不受暂停影响，但仍要求交易时段。"""

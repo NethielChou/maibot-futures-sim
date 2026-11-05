@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 
 from .config import RiskConfig
-from .contracts import ContractSpec
+from .contracts import ContractSpec, front_name
 from .ledger import Account, Position
 
 
@@ -87,19 +87,20 @@ def check_open(
 
     today = context.today or context.now.date()
     if spec.is_expired(today):
-        return RiskVerdict(False, f"{spec.symbol} 已过最后交易日（{spec.last_trade_date}），禁止开仓")
+        return RiskVerdict(False, f"{front_name(spec.symbol)} 已过最后交易日，禁止开仓")
     trading_days_left = spec.trading_days_to_last(today)
     if trading_days_left <= int(config.expiry_block_days):
         return RiskVerdict(
             False,
-            f"{spec.symbol} 距最后交易日仅剩 {trading_days_left} 个交易日（阈值 {config.expiry_block_days}），禁止开新仓",
+            f"{front_name(spec.symbol)} 距最后交易日仅剩 {trading_days_left} 个交易日"
+            f"（阈值 {config.expiry_block_days}），禁止开新仓",
         )
 
     if context.reference_price <= 0:
         return RiskVerdict(False, "参考价非法")
     for position in context.positions:
         if position.symbol == symbol:
-            return RiskVerdict(False, f"{symbol} 已有持仓，不支持加仓")
+            return RiskVerdict(False, f"{front_name(symbol)} 已有持仓，不支持加仓")
     if not isinstance(lots, int) or lots <= 0:
         return RiskVerdict(False, f"手数非法：{lots!r}")
     if lots > config.max_lots_per_symbol:

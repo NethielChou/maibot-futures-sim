@@ -13,6 +13,18 @@ from .ledger import Account, DecisionRecord, Equity, Position, Settlement, Trade
 
 DISCLAIMER = "（模拟盘：行情为真实数据，合约参数为近似值，成交为模拟撮合，仅供娱乐，不构成投资建议）"
 COIN = "麦麦币"
+_ACTION_TEXT = {
+    "open_long": "开多",
+    "open_short": "开空",
+    "close_long": "平多",
+    "close_short": "平空",
+    "close": "平仓",
+    "hold": "观望",
+}
+
+
+def _action_text(action) -> str:
+    return _ACTION_TEXT.get(str(action or ""), str(action or "-"))
 
 
 def append_disclaimer(text: str) -> str:
@@ -115,7 +127,7 @@ def format_state(
             reason = reason[:160] + "…"
         fallback_note = "（回退）" if str(last_decision.outcome).startswith("fallback") else ""
         lines.append(
-            f"最近决策：{last_decision.ts[11:19]} {last_decision.action}{fallback_note}｜理由：{reason}"
+            f"最近决策：{last_decision.ts[11:19]} {_action_text(last_decision.action)}{fallback_note}｜理由：{reason}"
         )
     if positions:
         lines.append("持仓：")

@@ -45,9 +45,10 @@ class OfficialParseTest(unittest.TestCase):
                 "SR701 |5,220.00  |5,206.00  |5,244.00  |5,200.00  |5,242.00  |5,228.00  |22.00",
             ]
         )
-        prices = official.parse_czce_settlements(text)
-        self.assertEqual(prices["CF701"], 15205.0)
-        self.assertEqual(prices["SR701"], 5228.0)
+        prices = official.parse_czce_settlements(text, reference_year=2026)
+        self.assertEqual(prices["CF2701"], 15205.0)
+        self.assertEqual(prices["SR2701"], 5228.0)
+        self.assertNotIn("CF701", prices)
 
     def test_parse_shfe_holiday_page(self):
         html = """

@@ -670,6 +670,15 @@ class Ledger:
             for row in rows
         ]
 
+    def latest_settlement_price(self, symbol: str) -> float | None:
+        """最近一次结算价；用于过期且无行情持仓的离线平仓参考。"""
+
+        row = self._conn.execute(
+            "SELECT settle_price FROM settlements WHERE symbol = ? ORDER BY settle_date DESC LIMIT 1",
+            (str(symbol),),
+        ).fetchone()
+        return None if row is None else float(row["settle_price"])
+
     def get_meta(self, key: str, default: str | None = None) -> str | None:
         row = self._conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
         return default if row is None else str(row["value"])

@@ -284,7 +284,7 @@ async def handle_command(
         if sub in _MANUAL_SUBS:
             parts = arg.split()
             if not parts:
-                return CommandResult(True, "用法：/期货 买 RB2701 [手数]｜/期货 卖 RB2701 [手数]｜/期货 平 RB2701")
+                return CommandResult(True, "用法：/期货 买 螺纹钢 [手数]｜/期货 卖 螺纹钢 [手数]｜/期货 平 螺纹钢")
             symbol = parts[0].strip().upper()
             if callable(services.resolve_symbol):
                 symbol = services.resolve_symbol(parts[0]) or symbol

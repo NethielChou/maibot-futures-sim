@@ -32,6 +32,11 @@ class CalendarTest(unittest.TestCase):
             4,
         )
 
+    def test_spring_festival_static_fallback(self):
+        self.assertFalse(calendar.is_trading_day("cn", date(2026, 2, 23)))
+        self.assertEqual(calendar.next_trading_day("cn", date(2026, 2, 13)), date(2026, 2, 24))
+        self.assertFalse(calendar.night_session_allowed("cn", date(2026, 12, 31)))
+
     def test_holiday_eve_has_no_night_session(self):
         self.assertFalse(calendar.night_session_allowed("cn", date(2026, 9, 30)))
         self.assertTrue(calendar.night_session_allowed("cn", date(2026, 11, 3)))
