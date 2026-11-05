@@ -1,0 +1,92 @@
+# 麦麦期货模拟盘 config.example.toml
+# 由 scripts/dev_bootstrap_artifacts.py 从 config_model 默认值生成，请勿手改本文件。
+# 复制为 config.toml 后由宿主加载；仓库根目录不得提交 config.toml。
+
+[plugin]
+enabled = true
+config_version = "0.8.3"
+
+[account]
+initial_balance = 1000000.0
+slippage_ticks = 1
+allow_short = true
+settle_enabled = true
+settle_time = "15:10"
+settle_use_last = false
+settle_retry_seconds = 300
+
+[market]
+source = "sina"
+markets = ["cn"]
+symbols = []
+quote_poll_seconds = 60
+quote_timeout_seconds = 8
+stale_quote_seconds = 180
+sessions = ["09:00-10:15", "10:30-11:30", "13:30-15:00"]
+night_enabled = true
+
+[risk]
+max_total_margin_ratio = 0.3
+max_positions = 3
+max_lots_per_symbol = 1
+daily_trade_limit = 6
+daily_loss_limit_ratio = 0.03
+stop_loss_atr_mult = 2.0
+take_profit_atr_mult = 3.0
+cooldown_minutes_per_symbol = 30
+max_drift_ticks = 5
+fill_max_quote_age_seconds = 10
+max_abs_price_change_ratio = 0.1
+expiry_block_days = 3
+
+[decision]
+auto_trade = false
+llm_enabled = true
+interval_minutes = 30
+min_interval_minutes = 10
+max_interval_minutes = 90
+warmup_samples = 20
+max_llm_calls_per_day = 30
+prompt_char_limit = 8000
+decision_max_tokens = 1200
+report_max_tokens = 300
+temperature = 0.7
+report_temperature = 0.9
+decision_task_name = "planner"
+report_task_name = "replyer"
+request_timeout_ms = 120000
+recent_trades_in_context = 5
+
+[notify]
+platform = "qq"
+account_id = ""
+group_ids = []
+private_user_ids = []
+private_enabled = false
+event_reports = true
+close_report_enabled = true
+close_report_delay_minutes = 5
+merge_messages = true
+merge_window_ms = 800
+
+[admin]
+users = []
+
+[influence]
+enabled = false
+group_enabled = false
+group_window_minutes = 20
+group_max_messages = 30
+news_enabled = false
+news_interval_minutes = 45
+news_max_items = 5
+
+[storage]
+history_limit = 200
+
+[official]
+enabled = true
+calendar_sync_hours = 6
+settlement_enabled = true
+timeout_seconds = 15
+cache_enabled = true

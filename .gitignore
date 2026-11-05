@@ -1,0 +1,27 @@
+# 运行配置由宿主生成，不提交
+/config.toml
+/config_back/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# 运行数据（正常在实例根 data/plugins 下，防止误提交）
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+/data/
+/temp/
+
+# 本地设计/需求资料不随公开仓库发布
+/docs/
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# logs
+/logs/
