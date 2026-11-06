@@ -640,6 +640,20 @@ for _symbol, _spec in list(DEFAULT_CONTRACTS.items()):
             _spec, display_name=front_name(_symbol)
         )
 
+# 让高级品种覆盖也能填中文品种名（如“螺纹钢”“布伦特原油”），
+# 不用逼普通用户记 RB2701/SC2701 这类代码。
+_ALIAS_TO_SYMBOL: dict[str, str] = {}
+for _profile in MARKET_PROFILES.values():
+    for _symbol in _profile.contracts:
+        _spec = DEFAULT_CONTRACTS.get(_symbol)
+        if _spec is None:
+            continue
+        for _alias in (_symbol, _spec.display_name, front_name(_symbol), _spec.name):
+            _text = str(_alias or "").strip()
+            if _text:
+                _ALIAS_TO_SYMBOL.setdefault(_text.upper(), _symbol)
+                _ALIAS_TO_SYMBOL.setdefault(_text, _symbol)
+
 
 def resolve_market_contracts(
     markets: list[str],
@@ -683,17 +697,25 @@ def load_contracts(
     source = DEFAULT_CONTRACTS if table is None else table
     result: dict[str, ContractSpec] = {}
     for raw_symbol in symbols:
-        symbol = str(raw_symbol).strip().upper()
+        raw_text = str(raw_symbol).strip()
+        symbol = raw_text.upper()
         if not symbol:
-            raise ContractError("合约代码不能为空")
+            raise ContractError("品种代码不能为空")
+        if symbol not in source:
+            symbol = _ALIAS_TO_SYMBOL.get(raw_text) or _ALIAS_TO_SYMBOL.get(symbol) or symbol
         if symbol in result:
             continue
         spec = source.get(symbol)
         if spec is None:
-            raise ContractError(f"未知合约：{symbol}（首版仅支持 {sorted(source)}）")
+            examples = "、".join(
+                item.display_name or item_symbol for item_symbol, item in list(source.items())[:8]
+            )
+            raise ContractError(
+                f"未知品种：{raw_text}（可填品种名或合约代码，例如 {examples}）"
+            )
         result[symbol] = spec
     if not result:
-        raise ContractError("合约池为空")
+        raise ContractError("品种池为空")
     return result
 
 

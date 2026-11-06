@@ -25,6 +25,7 @@ from . import tools
 from .bars import SampleBook
 from .command_router import CommandRouter
 from .config import CONFIG_VERSION, MaiFuturesConfig
+from .config_ui import build_config_ui_schema
 from .contracts import DEFAULT_CONTRACTS, MARKET_PROFILES, resolve_market_contracts
 from .decision import CallBudget, LLMDecisionEngine
 from .influence import InfluenceService
@@ -35,7 +36,7 @@ from .runtimes import MarketRuntime
 from .scheduler import TradingEngine
 
 CST = ZoneInfo("Asia/Shanghai")
-PLUGIN_VERSION = "0.8.6"
+PLUGIN_VERSION = "0.8.7"
 _STREAM_REFRESH_INTERVAL_SECONDS = 60.0
 
 
@@ -43,6 +44,12 @@ class MaiFuturesSimPlugin(MaiBotPlugin):
     """麦麦期货模拟盘插件实例。"""
 
     config_model = MaiFuturesConfig
+
+    @classmethod
+    def build_config_schema(cls, **plugin_info: Any):
+        """用中文页签/字段标题包装 SDK 默认 Schema，不改配置模型。"""
+
+        return build_config_ui_schema(super().build_config_schema(**plugin_info))
 
     def __init__(self) -> None:
         super().__init__()

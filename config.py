@@ -8,7 +8,7 @@
 
 from maibot_sdk import Field, PluginConfigBase
 
-CONFIG_VERSION = "0.8.6"
+CONFIG_VERSION = "0.8.7"
 
 
 class PluginSectionConfig(PluginConfigBase):

@@ -62,6 +62,12 @@ class ContractTest(unittest.TestCase):
             {"RB2701"},
         )
 
+    def test_product_names_accepted_as_advanced_override(self):
+        specs = contracts.resolve_market_contracts([], ["螺纹钢", "甲醇"])
+        self.assertEqual(set(specs), {"RB2701", "MA2701"})
+        intl = contracts.resolve_market_contracts([], ["布伦特原油"])
+        self.assertEqual(set(intl), {"OIL"})
+
     def test_unknown_market_raises(self):
         with self.assertRaises(contracts.ContractError):
             contracts.resolve_market_contracts(["us"])
