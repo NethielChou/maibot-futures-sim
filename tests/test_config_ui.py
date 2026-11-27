@@ -12,8 +12,8 @@ class ConfigUiTest(unittest.TestCase):
         cls.plugin = package.create_plugin()
         cls.schema = type(cls.plugin).build_config_schema(
             plugin_id="github.nethielchou.mai-futures-sim",
-            plugin_name="麦麦期货模拟盘",
-            plugin_version="0.8.7",
+            plugin_name="麦麦期货战士",
+            plugin_version="0.8.8",
         )
 
     def _field(self, section_id: str, field_name: str) -> dict:

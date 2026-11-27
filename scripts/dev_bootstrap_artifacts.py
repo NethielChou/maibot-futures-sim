@@ -1,11 +1,17 @@
-"""开发脚本：从配置模型生成 config.example.toml，并生成 icon.png。
+"""开发脚本：从配置模型生成 config.example.toml。
+
+重要：默认**不再生成 icon.png**。项目图标是维护中的美术资源，
+旧脚本每次运行都会把新图标覆盖成 K 线图；如确实需要旧版生成器，
+显式加 ``--legacy-icon``，输出到 ``artifacts/legacy-icon.png``。
 
 用法（必须用 Bot Python 运行）：
   <generation 目录下的 python.exe> scripts/dev_bootstrap_artifacts.py
+  <generation 目录下的 python.exe> scripts/dev_bootstrap_artifacts.py --legacy-icon
 
 不访问网络、不接触宿主运行数据。
 """
 
+import argparse
 import importlib.util
 import json
 import sys
@@ -33,7 +39,7 @@ def write_config_example(defaults: dict) -> Path:
     import tomlkit
 
     header = (
-        "# 麦麦期货模拟盘 config.example.toml\n"
+        "# 麦麦期货战士 config.example.toml\n"
         "# 由 scripts/dev_bootstrap_artifacts.py 从 config_model 默认值生成，请勿手改本文件。\n"
         "# 复制为 config.toml 后由宿主加载；仓库根目录不得提交 config.toml。\n\n"
     )
@@ -42,7 +48,9 @@ def write_config_example(defaults: dict) -> Path:
     return path
 
 
-def write_icon() -> Path:
+def write_legacy_icon(path: Path) -> Path:
+    """显式生成旧版 K 线图标；默认输出到 artifacts/，绝不覆盖根目录图标。"""
+
     from PIL import Image, ImageDraw
 
     width = height = 256
@@ -73,27 +81,33 @@ def write_icon() -> Path:
     # 底部小字标记（纯几何，不含中文字体依赖）
     draw.rectangle([36, 224, 220, 232], fill="#F3B27A")
 
-    path = PROJECT_ROOT / "icon.png"
+    path.parent.mkdir(parents=True, exist_ok=True)
     image.save(path, format="PNG")
     return path
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="生成麦麦期货战士示例配置")
+    parser.add_argument(
+        "--legacy-icon",
+        action="store_true",
+        help="额外生成旧版 K 线图标到 artifacts/legacy-icon.png（不覆盖根目录 icon.png）",
+    )
+    args = parser.parse_args()
+
     module = load_plugin_module()
     plugin = module.create_plugin()
     defaults = type(plugin).build_default_config()
     config_path = write_config_example(defaults)
-    icon_path = write_icon()
-    print(
-        json.dumps(
-            {
-                "config_example": str(config_path),
-                "config_sections": list(defaults.keys()),
-                "icon": str(icon_path),
-            },
-            ensure_ascii=False,
-        )
-    )
+    result = {
+        "config_example": str(config_path),
+        "config_sections": list(defaults.keys()),
+        "icon": "unchanged (维护中的 icon.png)",
+    }
+    if args.legacy_icon:
+        legacy_path = write_legacy_icon(PROJECT_ROOT / "artifacts" / "legacy-icon.png")
+        result["legacy_icon"] = str(legacy_path)
+    print(json.dumps(result, ensure_ascii=False))
 
 
 if __name__ == "__main__":

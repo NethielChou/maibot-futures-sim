@@ -1,4 +1,4 @@
-"""麦麦期货模拟盘 — 主入口。
+"""麦麦期货战士 — 主入口。
 
 职责：
 - 生命周期：on_load / on_unload / on_config_update；
@@ -36,12 +36,12 @@ from .runtimes import MarketRuntime
 from .scheduler import TradingEngine
 
 CST = ZoneInfo("Asia/Shanghai")
-PLUGIN_VERSION = "0.8.7"
+PLUGIN_VERSION = "0.8.8"
 _STREAM_REFRESH_INTERVAL_SECONDS = 60.0
 
 
 class MaiFuturesSimPlugin(MaiBotPlugin):
-    """麦麦期货模拟盘插件实例。"""
+    """麦麦期货战士插件实例。"""
 
     config_model = MaiFuturesConfig
 
@@ -76,7 +76,7 @@ class MaiFuturesSimPlugin(MaiBotPlugin):
             await self._stop_services()
             await self._start_services()
         self.ctx.logger.info(
-            "麦麦期货模拟盘 %s 已加载（config_version=%s，市场=%s，自动交易=%s）",
+            "麦麦期货战士 %s 已加载（config_version=%s，市场=%s，自动交易=%s）",
             PLUGIN_VERSION,
             CONFIG_VERSION,
             ",".join(self._runtimes) or "-",
@@ -88,7 +88,7 @@ class MaiFuturesSimPlugin(MaiBotPlugin):
 
         async with self._setup_lock:
             await self._stop_services()
-        self.ctx.logger.info("麦麦期货模拟盘已卸载")
+        self.ctx.logger.info("麦麦期货战士已卸载")
 
     async def on_config_update(self, scope: str, config_data: dict[str, Any], version: str) -> None:
         """配置热更新：重建服务（配置变化不需要代码热重载）。"""
@@ -99,7 +99,7 @@ class MaiFuturesSimPlugin(MaiBotPlugin):
         async with self._setup_lock:
             await self._stop_services()
             await self._start_services()
-        self.ctx.logger.info("麦麦期货模拟盘配置已更新（version=%s），服务与循环已重建", version)
+        self.ctx.logger.info("麦麦期货战士配置已更新（version=%s），服务与循环已重建", version)
 
     # ---------- 服务装配 ----------
 
@@ -565,7 +565,7 @@ class MaiFuturesSimPlugin(MaiBotPlugin):
 
     @Command(
         "期货",
-        description="麦麦期货模拟盘：状态/行情/概览/记录/帮助；控制命令仅管理员",
+        description="麦麦期货战士：状态/行情/概览/记录/帮助；控制命令仅管理员",
         pattern=r"^/(?:期货|futures)(?:\s+.*)?$",
         timeout_ms=180000,
     )

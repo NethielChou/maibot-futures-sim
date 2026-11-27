@@ -1,4 +1,4 @@
-"""配置模型：麦麦期货模拟盘（G2 骨架，字段与 G1 v0.2 对齐）。
+"""配置模型：麦麦期货战士（G2 骨架，字段与 G1 v0.2 对齐）。
 
 约定：
 - 所有字段必须有默认值（宿主 Runner 首次加载时以此生成 config.toml）。
@@ -195,7 +195,7 @@ class OfficialDataConfig(PluginConfigBase):
 
 
 class MaiFuturesConfig(PluginConfigBase):
-    """麦麦期货模拟盘总配置。"""
+    """麦麦期货战士总配置。"""
 
     plugin: PluginSectionConfig = Field(default_factory=PluginSectionConfig)
     account: AccountConfig = Field(default_factory=AccountConfig)

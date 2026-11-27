@@ -145,7 +145,7 @@ class CommandTest(unittest.TestCase):
 
     def test_help(self):
         result = self.run_command("/期货 帮助")
-        self.assertIn("麦麦期货模拟盘", result.text)
+        self.assertIn("麦麦期货战士", result.text)
         self.assertIn("试跑", result.text)
 
     def test_non_command(self):

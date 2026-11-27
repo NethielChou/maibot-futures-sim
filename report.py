@@ -111,7 +111,7 @@ def format_state(
     """``/期货 状态``。"""
 
     trading = "自动交易开启" if auto_trade else "自动交易关闭"
-    title = f"📊 {market_label}" if market_label else "📊 麦麦期货模拟盘"
+    title = f"📊 {market_label}" if market_label else "📊 麦麦期货战士"
     lines = [
         f"{title}｜权益 {fmt_money(equity.equity)} {currency}｜现金 {fmt_money(account.cash)} {currency}",
         f"已用保证金 {fmt_money(equity.margin_used)}｜浮动盈亏 {fmt_signed(equity.floating)}"
@@ -182,7 +182,7 @@ def format_help() -> str:
     return append_disclaimer(
         "\n".join(
             [
-                "麦麦期货模拟盘 · 命令",
+                "麦麦期货战士 · 命令",
                 "/期货 状态       账户、持仓、权益（所有人）",
                 "/期货 行情 [合约] 行情快照（所有人）",
                 "/期货 概览       国内+国际市场行情概览（所有人）",

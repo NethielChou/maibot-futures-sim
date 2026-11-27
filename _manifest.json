@@ -1,10 +1,10 @@
 {
   "manifest_version": 2,
   "id": "github.nethielchou.mai-futures-sim",
-  "version": "0.8.7",
+  "version": "0.8.8",
   "plugin_type": "automation",
-  "name": "麦麦期货模拟盘",
-  "description": "让麦麦用自己的判断交易一个本地虚拟期货账户：真实合约行情、模拟成交与结算、程序风控、群内汇报；纯娱乐模拟盘，不接真实交易通道。",
+  "name": "麦麦期货战士",
+  "description": "麦麦期货战士（原麦麦期货模拟盘）：让麦麦用自己的判断交易一个本地虚拟期货账户，真实行情、模拟成交与结算、程序风控、群内汇报；纯娱乐模拟盘，不接真实交易通道。",
   "display": {
     "icon": {
       "type": "local",

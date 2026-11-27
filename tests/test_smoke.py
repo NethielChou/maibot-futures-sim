@@ -69,8 +69,8 @@ class PluginContractTest(unittest.TestCase):
     def test_config_schema(self):
         schema = type(self.plugin).build_config_schema(
             plugin_id="github.nethielchou.mai-futures-sim",
-            plugin_name="麦麦期货模拟盘",
-            plugin_version="0.8.7",
+            plugin_name="麦麦期货战士",
+            plugin_version="0.8.8",
         )
         self.assertIsInstance(schema, dict)
         self.assertTrue(schema)
@@ -112,6 +112,8 @@ class PluginContractTest(unittest.TestCase):
                 tuple(int(part) for part in version_range["max_version"].split(".")),
             )
         self.assertTrue(raw["urls"]["repository"].startswith("https://github.com/"))
+        self.assertEqual(raw["name"], "麦麦期货战士")
+        self.assertEqual(raw["version"], "0.8.8")
         icon = raw["display"]["icon"]
         self.assertEqual(icon["type"], "local")
         self.assertTrue((PROJECT_ROOT / icon["value"]).is_file(), "本地图标文件不存在")
@@ -119,6 +121,23 @@ class PluginContractTest(unittest.TestCase):
         self.assertIn("send.forward", raw["capabilities"])
         self.assertIn("send.text", raw["capabilities"])
         self.assertEqual(raw["i18n"]["default_locale"], "zh-CN")
+
+    def test_brand_assets_dimensions(self):
+        """icon/封面必须是 Codex 交付的 512/1024 方图，避免脚本回退成旧 K 线图。"""
+
+        icon = self._png_size(PROJECT_ROOT / "icon.png")
+        cover = self._png_size(PROJECT_ROOT / "assets" / "cover-warrior-square.png")
+        self.assertEqual(icon, (512, 512))
+        self.assertEqual(cover, (1024, 1024))
+
+    @staticmethod
+    def _png_size(path: Path) -> tuple[int, int]:
+        data = path.read_bytes()
+        if data[:8] != b"\x89PNG\r\n\x1a\n" or len(data) < 24:
+            raise AssertionError(f"不是有效 PNG：{path}")
+        width = int.from_bytes(data[16:20], "big")
+        height = int.from_bytes(data[20:24], "big")
+        return width, height
 
     def test_manifest_host_validator(self):
         """真实宿主 ManifestValidator（需要 MAIBOT_INSTANCE_DIR 指向实例根）。"""
